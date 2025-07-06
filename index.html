@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sai Silicon Valley - Visitor Management</title>
+    <link rel="stylesheet" href="style.css">
+    <meta name="description" content="Visitor Management System for Sai Silicon Valley Society">
+    <meta name="theme-color" content="#21808D">
+    <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiU2FpIFNpbGljb24gVmFsbGV5IC0gVmlzaXRvciBNYW5hZ2VtZW50Iiwic2hvcnRfbmFtZSI6IlNhaVNpbGljb25WYWxsZXkiLCJzdGFydF91cmwiOiIvIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiI0ZDRkNGOSIsInRoZW1lX2NvbG9yIjoiIzIxODA4RCIsImljb25zIjpbeyJzcmMiOiJkYXRhOmltYWdlL3N2Zyt4bWw7YmFzZTY0LFBITjJaeUoyYVdWM1FtOTRQU0l3SURBZ01qUWdNalFpSUdobGFXZG9kRDBpTWpRaUlIZHBaSFJvUFNJeU5DSWdhV1E5SWpFeElpQm1hV3hzUFNJak1qRTRNRGhFSWlCNGJXeHVjejBpYUhSMGNEb3ZMM2QzZHk1M00zVnlibWN1YjNKbkx6SXdNREF2YzNabklqNDhjR0YwYUNCa1BTSk5NamdnTkRZaE5EWWdNVGd1TlRVM09UaGhPQ0F6SWpBaU1EQXhRamdnT1RsbE5ESXVOVGd6TkRNZ05EWWdORFlnTURBeElqNDhMM0JoZEdnK1BIQmhkR2dnWkQwaVRUSXVOVGMxTnprM2FEY3VNRGcxTlRNMU5UZ3hORFl1TkRFMU5UVTFMalV5ZVRZdU5UQTJNVGN4TkRVdU5EQXpRVGtnT1RwRU5ERTFMalV5ZVRZdU5UQTJNVGN4TkRVdU5EQXpMUzQ1T0RFMk1qZzNMall5T0RNeU5qVXVOVEEyTVRjdE5EWXVORGRTTWpWUU1qVXVOVEEyTVRjdE5EWXVORGRDTWpNdU5UQTJNVGN0TkRZdU5EZGFJakI0SWpBaU1EQXhRamdnT1RsbE5ESXVOVGd6TkRNZ05EWWdORFl0TkRJdU5UVTBNRGQwTFRVdU5EQXpRVGtnT1RwRU5ERTFMalV5ZVRZdU5UQTJNVGN4TkRVdU5EQXpMUzQ1T0RFMk1qZzNMall5T0RNeU5qVXVOVEEyTVRjdE5EWXVORGRTTWpWUU1qVXVOVEEyTVRjdE5EWXVORGRDTWpNdU5UQTJNVGN0TkRZdU5EZGFJaUk4TDNCaGRHZytQQzl6ZG1jKyIsInNpemVzIjoiMjR4MjQiLCJ0eXBlIjoiaW1hZ2Uvc3ZnK3htbCJ9XX0=">
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h3>Sai Silicon Valley</h3>
+            <button class="sidebar-toggle" id="sidebarToggle">☰</button>
+        </div>
+        <ul class="sidebar-menu">
+            <li><a href="#" class="nav-link active" data-view="guard">Security Guard</a></li>
+            <li><a href="#" class="nav-link" data-view="resident-login">Resident Login</a></li>
+            <li><a href="#" class="nav-link" data-view="admin">Admin Panel</a></li>
+        </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content" id="mainContent">
+        
+        <!-- Security Guard Interface (Default) -->
+        <div class="view active" id="guard-view">
+            <div class="container">
+                <div class="header">
+                    <h1 id="guard-title">Security Guard</h1>
+                    <button class="btn btn--secondary" id="languageToggle">मराठी</button>
+                </div>
+                
+                <div class="guard-interface">
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="new-visitor">New Visitor</button>
+                        <button class="tab-btn" data-tab="pending-requests">Pending Requests</button>
+                    </div>
+                    
+                    <!-- New Visitor Form -->
+                    <div class="tab-content active" id="new-visitor">
+                        <form class="visitor-form" id="visitorForm">
+                            <div class="form-group">
+                                <label class="form-label" id="photo-label">Visitor Photo</label>
+                                <div class="photo-section">
+                                    <div class="photo-preview" id="photoPreview">
+                                        <span id="photo-placeholder">No photo taken</span>
+                                    </div>
+                                    <button type="button" class="btn btn--primary" id="takePhoto">Take Photo</button>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" id="visitor-name-label">Visitor Name</label>
+                                <input type="text" class="form-control" id="visitorName" placeholder="Enter visitor name" required>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" id="vehicle-label">Vehicle Details</label>
+                                <div class="flex gap-8">
+                                    <select class="form-control" id="vehicleType" style="flex: 1;">
+                                        <option value="">Select Type</option>
+                                        <option value="Car">Car</option>
+                                        <option value="Bike">Bike</option>
+                                        <option value="Tempo">Tempo</option>
+                                        <option value="Auto">Auto</option>
+                                        <option value="Cycle">Cycle</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                    <input type="text" class="form-control" id="vehicleNumber" placeholder="Vehicle number" style="flex: 2;">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" id="purpose-label">Purpose of Visit</label>
+                                <select class="form-control" id="purposeOfVisit">
+                                    <option value="">Select Purpose</option>
+                                    <option value="Delivery">Delivery</option>
+                                    <option value="Guest">Guest</option>
+                                    <option value="Service">Service</option>
+                                    <option value="Maintenance">Maintenance</option>
+                                    <option value="Official">Official</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" id="flat-label">Select Flat</label>
+                                <select class="form-control" id="flatSelect" required>
+                                    <option value="">Select Flat</option>
+                                    <optgroup label="A Wing">
+                                        <option value="A101">A101</option>
+                                        <option value="A102">A102</option>
+                                        <option value="A103">A103</option>
+                                        <option value="A104">A104</option>
+                                        <option value="A105">A105</option>
+                                        <option value="A201">A201</option>
+                                        <option value="A202">A202</option>
+                                        <option value="A203">A203</option>
+                                        <option value="A204">A204</option>
+                                        <option value="A205">A205</option>
+                                        <option value="A301">A301</option>
+                                        <option value="A302">A302</option>
+                                        <option value="A303">A303</option>
+                                        <option value="A304">A304</option>
+                                        <option value="A305">A305</option>
+                                        <option value="A401">A401</option>
+                                        <option value="A402">A402</option>
+                                        <option value="A403">A403</option>
+                                        <option value="A404">A404</option>
+                                        <option value="A405">A405</option>
+                                        <option value="A501">A501</option>
+                                        <option value="A502">A502</option>
+                                        <option value="A503">A503</option>
+                                        <option value="A504">A504</option>
+                                        <option value="A505">A505</option>
+                                    </optgroup>
+                                    <optgroup label="B Wing">
+                                        <option value="B101">B101</option>
+                                        <option value="B102">B102</option>
+                                        <option value="B103">B103</option>
+                                        <option value="B104">B104</option>
+                                        <option value="B105">B105</option>
+                                        <option value="B201">B201</option>
+                                        <option value="B202">B202</option>
+                                        <option value="B203">B203</option>
+                                        <option value="B204">B204</option>
+                                        <option value="B205">B205</option>
+                                        <option value="B301">B301</option>
+                                        <option value="B302">B302</option>
+                                        <option value="B303">B303</option>
+                                        <option value="B304">B304</option>
+                                        <option value="B305">B305</option>
+                                        <option value="B401">B401</option>
+                                        <option value="B402">B402</option>
+                                        <option value="B403">B403</option>
+                                        <option value="B404">B404</option>
+                                        <option value="B405">B405</option>
+                                        <option value="B501">B501</option>
+                                        <option value="B502">B502</option>
+                                        <option value="B503">B503</option>
+                                        <option value="B504">B504</option>
+                                        <option value="B505">B505</option>
+                                    </optgroup>
+                                    <optgroup label="C Wing">
+                                        <option value="C101">C101</option>
+                                        <option value="C102">C102</option>
+                                        <option value="C103">C103</option>
+                                        <option value="C104">C104</option>
+                                        <option value="C105">C105</option>
+                                        <option value="C201">C201</option>
+                                        <option value="C202">C202</option>
+                                        <option value="C203">C203</option>
+                                        <option value="C204">C204</option>
+                                        <option value="C205">C205</option>
+                                        <option value="C301">C301</option>
+                                        <option value="C302">C302</option>
+                                        <option value="C303">C303</option>
+                                        <option value="C304">C304</option>
+                                        <option value="C305">C305</option>
+                                        <option value="C401">C401</option>
+                                        <option value="C402">C402</option>
+                                        <option value="C403">C403</option>
+                                        <option value="C404">C404</option>
+                                        <option value="C405">C405</option>
+                                        <option value="C501">C501</option>
+                                        <option value="C502">C502</option>
+                                        <option value="C503">C503</option>
+                                        <option value="C504">C504</option>
+                                        <option value="C505">C505</option>
+                                    </optgroup>
+                                    <optgroup label="D Wing">
+                                        <option value="D101">D101</option>
+                                        <option value="D102">D102</option>
+                                        <option value="D103">D103</option>
+                                        <option value="D104">D104</option>
+                                        <option value="D105">D105</option>
+                                        <option value="D201">D201</option>
+                                        <option value="D202">D202</option>
+                                        <option value="D203">D203</option>
+                                        <option value="D204">D204</option>
+                                        <option value="D205">D205</option>
+                                        <option value="D301">D301</option>
+                                        <option value="D302">D302</option>
+                                        <option value="D303">D303</option>
+                                        <option value="D304">D304</option>
+                                        <option value="D305">D305</option>
+                                        <option value="D401">D401</option>
+                                        <option value="D402">D402</option>
+                                        <option value="D403">D403</option>
+                                        <option value="D404">D404</option>
+                                        <option value="D405">D405</option>
+                                        <option value="D501">D501</option>
+                                        <option value="D502">D502</option>
+                                        <option value="D503">D503</option>
+                                        <option value="D504">D504</option>
+                                        <option value="D505">D505</option>
+                                    </optgroup>
+                                    <optgroup label="E Wing">
+                                        <option value="E101">E101</option>
+                                        <option value="E102">E102</option>
+                                        <option value="E103">E103</option>
+                                        <option value="E104">E104</option>
+                                        <option value="E105">E105</option>
+                                        <option value="E201">E201</option>
+                                        <option value="E202">E202</option>
+                                        <option value="E203">E203</option>
+                                        <option value="E204">E204</option>
+                                        <option value="E205">E205</option>
+                                        <option value="E301">E301</option>
+                                        <option value="E302">E302</option>
+                                        <option value="E303">E303</option>
+                                        <option value="E304">E304</option>
+                                        <option value="E305">E305</option>
+                                        <option value="E401">E401</option>
+                                        <option value="E402">E402</option>
+                                        <option value="E403">E403</option>
+                                        <option value="E404">E404</option>
+                                        <option value="E405">E405</option>
+                                        <option value="E501">E501</option>
+                                        <option value="E502">E502</option>
+                                        <option value="E503">E503</option>
+                                        <option value="E504">E504</option>
+                                        <option value="E505">E505</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            
+                            <button type="submit" class="btn btn--primary btn--full-width" id="submitBtn">
+                                <span class="loading hidden" id="submitLoading"></span>
+                                <span id="submitText">Submit Request</span>
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <!-- Pending Requests -->
+                    <div class="tab-content" id="pending-requests">
+                        <div class="pending-list" id="pendingList">
+                            <div class="loading-container">
+                                <div class="loading"></div>
+                                <p>Loading pending requests...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Resident Login -->
+        <div class="view" id="resident-login-view">
+            <div class="container">
+                <div class="auth-container">
+                    <h2>Resident Login</h2>
+                    
+                    <!-- Registration Form -->
+                    <div class="auth-form" id="registrationForm">
+                        <h3>Register / Login</h3>
+                        <form id="residentRegForm">
+                            <div class="form-group">
+                                <label class="form-label">Phone Number</label>
+                                <input type="tel" class="form-control" id="residentPhone" placeholder="Enter 10-digit phone number" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Email Address</label>
+                                <input type="email" class="form-control" id="residentEmail" placeholder="Enter email address" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Select Your Flat</label>
+                                <select class="form-control" id="residentFlat" required>
+                                    <option value="">Select Your Flat</option>
+                                    <!-- Same options as guard interface -->
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn--primary btn--full-width">
+                                <span class="loading hidden" id="loginLoading"></span>
+                                <span id="loginText">Register / Login</span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Resident Dashboard -->
+        <div class="view" id="resident-dashboard-view">
+            <div class="container">
+                <div class="header">
+                    <h1>Resident Dashboard</h1>
+                    <div class="flex gap-8">
+                        <span id="residentInfo" class="resident-info"></span>
+                        <button class="btn btn--secondary" id="residentLogout">Logout</button>
+                    </div>
+                </div>
+                
+                <div class="resident-interface">
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="pending-approvals">Pending Approvals</button>
+                        <button class="tab-btn" data-tab="visitor-history">Visitor History</button>
+                    </div>
+                    
+                    <div class="tab-content active" id="pending-approvals">
+                        <div class="approval-list" id="approvalList">
+                            <div class="loading-container">
+                                <div class="loading"></div>
+                                <p>Loading pending approvals...</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="tab-content" id="visitor-history">
+                        <div class="history-list" id="historyList">
+                            <div class="loading-container">
+                                <div class="loading"></div>
+                                <p>Loading visitor history...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Admin Panel -->
+        <div class="view" id="admin-view">
+            <div class="container">
+                <h1>Admin Panel</h1>
+                
+                <div class="admin-stats">
+                    <div class="stat-card">
+                        <h3>Today's Visitors</h3>
+                        <span class="stat-number" id="todayVisitors">0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Pending Approvals</h3>
+                        <span class="stat-number" id="pendingApprovals">0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Approved Today</h3>
+                        <span class="stat-number" id="approvedToday">0</span>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Denied Today</h3>
+                        <span class="stat-number" id="deniedToday">0</span>
+                    </div>
+                </div>
+                
+                <div class="admin-content">
+                    <div class="filters">
+                        <select class="form-control" id="wingFilter">
+                            <option value="">All Wings</option>
+                            <option value="A">A Wing</option>
+                            <option value="B">B Wing</option>
+                            <option value="C">C Wing</option>
+                            <option value="D">D Wing</option>
+                            <option value="E">E Wing</option>
+                        </select>
+                        <input type="date" class="form-control" id="dateFilter">
+                        <button class="btn btn--primary" id="searchBtn">Search</button>
+                    </div>
+                    
+                    <div class="visitor-records" id="visitorRecords">
+                        <div class="loading-container">
+                            <div class="loading"></div>
+                            <p>Loading visitor records...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- Photo Capture Modal -->
+    <div class="modal" id="photoModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Take Visitor Photo</h3>
+                <button class="modal-close" id="closePhotoModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <video id="videoStream" autoplay playsinline></video>
+                <canvas id="photoCanvas" style="display: none;"></canvas>
+                <div class="photo-controls">
+                    <button class="btn btn--primary" id="captureBtn">Capture Photo</button>
+                    <button class="btn btn--secondary" id="retakeBtn" style="display: none;">Retake</button>
+                    <button class="btn btn--primary" id="savePhotoBtn" style="display: none;">Save Photo</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.38.0/dist/umd/supabase.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
