@@ -1,4 +1,4 @@
-// Visitor Management App with Supabase Integration and Proper Role-Based Access
+// Visitor Management App with Neon PostgreSQL Backend
 class VisitorManagementApp {
     constructor() {
         this.currentView = 'guard';
@@ -7,35 +7,21 @@ class VisitorManagementApp {
         this.isMarathi = false;
         this.currentPhoto = null;
         this.videoStream = null;
-        this.realTimeSubscriptions = [];
         this.isOnline = navigator.onLine;
         this.offlineQueue = [];
-        this.flatsList = []; // Cache for flats data
+        this.flatsList = [];
+        this.apiBaseUrl = this.getApiBaseUrl();
         
-        // Initialize Supabase
-        this.initSupabase();
         this.init();
     }
 
-    initSupabase() {
-        // Supabase configuration
-        const SUPABASE_URL = 'https://xxqylleusnxwmocyuhix.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4cXlsbGV1c254d21vY3l1aGl4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE3ODU2NDgsImV4cCI6MjA2NzM2MTY0OH0.OGXnOh_jqkbCIusIESntinjVlhWpxM4S61A5vN2II7w';
-        
-        try {
-            this.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-                auth: {
-                    autoRefreshToken: true,
-                    persistSession: true,
-                    detectSessionInUrl: false
-                }
-            });
-            console.log('Supabase initialized successfully');
-            this.showConnectionStatus('connected');
-        } catch (error) {
-            console.error('Failed to initialize Supabase:', error);
-            this.showConnectionStatus('disconnected');
+    getApiBaseUrl() {
+        // Use environment variable or fallback to local development
+        if (window.location.hostname === 'localhost') {
+            return 'http://localhost:3000/api';
         }
+        // Replace with your actual Netlify function URL or API gateway
+        return 'https://your-api-url.netlify.app/.netlify/functions/api';
     }
 
     async init() {
@@ -61,26 +47,43 @@ class VisitorManagementApp {
         }
         
         this.updateUI();
-        await this.setupRealTimeSubscriptions();
         this.registerServiceWorker();
+    }
+
+    async apiCall(endpoint, options = {}) {
+        const url = `${this.apiBaseUrl}${endpoint}`;
+        const defaultOptions = {
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        };
+
+        const finalOptions = { ...defaultOptions, ...options };
+
+        try {
+            const response = await fetch(url, finalOptions);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || `HTTP error! status: ${response.status}`);
+            }
+
+            return data;
+        } catch (error) {
+            console.error('API call failed:', error);
+            throw error;
+        }
     }
 
     async loadFlatsData() {
         try {
-            if (this.supabase && this.isOnline) {
-                const { data, error } = await this.supabase
-                    .from('flats')
-                    .select('*')
-                    .order('wing', { ascending: true })
-                    .order('flat_number', { ascending: true });
-
-                if (error) throw error;
-                this.flatsList = data || [];
+            if (this.isOnline) {
+                const response = await this.apiCall('/flats');
+                this.flatsList = response.data || [];
                 console.log('Flats data loaded:', this.flatsList.length, 'flats');
             }
         } catch (error) {
             console.error('Error loading flats data:', error);
-            // Fallback: generate flats list
             this.generateFallbackFlats();
         }
     }
@@ -104,16 +107,10 @@ class VisitorManagementApp {
     }
 
     async getFlatByCode(flatCode) {
-        if (this.supabase && this.isOnline) {
+        if (this.isOnline) {
             try {
-                const { data, error } = await this.supabase
-                    .from('flats')
-                    .select('*')
-                    .eq('flat_code', flatCode)
-                    .single();
-
-                if (error) throw error;
-                return data;
+                const response = await this.apiCall(`/flats/${flatCode}`);
+                return response.data;
             } catch (error) {
                 console.error('Error getting flat by code:', error);
             }
@@ -124,7 +121,6 @@ class VisitorManagementApp {
     }
 
     async checkExistingSession() {
-        // Check for stored resident session
         const storedUser = localStorage.getItem('sai_resident_user');
         const storedRole = localStorage.getItem('sai_user_role');
         
@@ -135,19 +131,14 @@ class VisitorManagementApp {
                 console.log('Restored resident session:', this.currentUser);
 
                 // Verify session is still valid
-                if (this.supabase && this.isOnline) {
-                    const { data, error } = await this.supabase
-                        .from('residents')
-                        .select('*')
-                        .eq('id', this.currentUser.id)
-                        .single();
-
-                    if (error || !data) {
+                if (this.isOnline) {
+                    try {
+                        const response = await this.apiCall(`/residents/${this.currentUser.id}`);
+                        this.currentUser = response.data;
+                        localStorage.setItem('sai_resident_user', JSON.stringify(this.currentUser));
+                    } catch (error) {
                         console.log('Session expired, clearing storage');
                         this.clearStoredSession();
-                    } else {
-                        this.currentUser = data;
-                        localStorage.setItem('sai_resident_user', JSON.stringify(this.currentUser));
                     }
                 }
             } catch (error) {
@@ -243,10 +234,8 @@ class VisitorManagementApp {
     }
 
     setupNavigation() {
-        // Update navigation based on user role
         this.updateNavigationForRole();
         
-        // Add mobile menu toggle if not exists
         if (!document.querySelector('.mobile-menu-toggle')) {
             const menuToggle = document.createElement('button');
             menuToggle.className = 'mobile-menu-toggle';
@@ -263,13 +252,11 @@ class VisitorManagementApp {
         let menuHTML = '';
         
         if (this.userRole === 'resident') {
-            // Resident-only navigation
             menuHTML = `
                 <li><a href="#" class="nav-link active" data-view="resident-dashboard">Dashboard</a></li>
                 <li><a href="#" class="nav-link" id="residentLogout">Logout</a></li>
             `;
         } else {
-            // Default navigation (Guard + Resident Login)
             menuHTML = `
                 <li><a href="#" class="nav-link active" data-view="guard">Security Guard</a></li>
                 <li><a href="#" class="nav-link" data-view="resident-login">Resident Login</a></li>
@@ -278,8 +265,6 @@ class VisitorManagementApp {
         }
         
         sidebarMenu.innerHTML = menuHTML;
-        
-        // Re-attach event listeners
         setTimeout(() => this.setupEventListeners(), 100);
     }
 
@@ -290,11 +275,9 @@ class VisitorManagementApp {
                 const parentContainer = btn.closest('.guard-interface') || btn.closest('.resident-interface');
                 if (!parentContainer) return;
 
-                // Update tab buttons
                 parentContainer.querySelectorAll('.tab-btn').forEach(tab => tab.classList.remove('active'));
                 btn.classList.add('active');
 
-                // Update tab content
                 parentContainer.querySelectorAll('.tab-content').forEach(content => {
                     content.classList.remove('active');
                 });
@@ -303,7 +286,6 @@ class VisitorManagementApp {
                     targetContent.classList.add('active');
                 }
 
-                // Update content based on tab
                 if (tabName === 'pending-requests') {
                     this.updatePendingRequests();
                 } else if (tabName === 'pending-approvals') {
@@ -356,7 +338,6 @@ class VisitorManagementApp {
     populateFlatDropdown(selectElement) {
         if (!selectElement || this.flatsList.length === 0) return;
 
-        // Group flats by wing
         const wingGroups = {};
         this.flatsList.forEach(flat => {
             if (!wingGroups[flat.wing]) {
@@ -396,69 +377,6 @@ class VisitorManagementApp {
         }, status === 'disconnected' ? 5000 : 2000);
     }
 
-    async setupRealTimeSubscriptions() {
-        if (!this.supabase) return;
-
-        try {
-            const visitorsSubscription = this.supabase
-                .channel('visitor_requests')
-                .on('postgres_changes', {
-                    event: '*',
-                    schema: 'public',
-                    table: 'visitor_requests'
-                }, (payload) => {
-                    console.log('Visitor request change:', payload);
-                    this.handleRealtimeUpdate(payload);
-                })
-                .subscribe();
-
-            this.realTimeSubscriptions.push(visitorsSubscription);
-            console.log('Real-time subscriptions established');
-        } catch (error) {
-            console.error('Failed to setup real-time subscriptions:', error);
-        }
-    }
-
-    handleRealtimeUpdate(payload) {
-        const { eventType, new: newRecord } = payload;
-
-        // Update UI based on current view
-        if (this.currentView === 'guard') {
-            this.updatePendingRequests();
-        } else if (this.currentView === 'resident-dashboard' && this.currentUser) {
-            this.updatePendingApprovals();
-            this.updateVisitorHistory();
-        } else if (this.currentView === 'admin') {
-            this.updateAdminStats();
-            this.displayVisitorRecords();
-        }
-
-        // Show notifications
-        if (eventType === 'INSERT' && newRecord && this.currentUser && this.userRole === 'resident') {
-            // Check if this request is for current user's flat
-            this.checkIfRequestForCurrentUser(newRecord);
-        } else if (eventType === 'UPDATE' && newRecord) {
-            if (newRecord.status === 'approved') {
-                this.showNotification('Visitor request approved', 'success');
-            } else if (newRecord.status === 'denied') {
-                this.showNotification('Visitor request denied', 'error');
-            }
-        }
-    }
-
-    async checkIfRequestForCurrentUser(record) {
-        if (!this.currentUser || !record.flat_id) return;
-
-        try {
-            const flat = await this.getFlatByCode(this.currentUser.flat_number || this.currentUser.flat_code);
-            if (flat && flat.id === record.flat_id) {
-                this.showNotification('New visitor approval request', 'info');
-            }
-        } catch (error) {
-            console.error('Error checking flat match:', error);
-        }
-    }
-
     toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.getElementById('mainContent');
@@ -471,19 +389,16 @@ class VisitorManagementApp {
     switchView(view) {
         console.log('Switching to view:', view);
 
-        // Prevent non-residents from accessing resident dashboard
         if (view === 'resident-dashboard' && (!this.currentUser || this.userRole !== 'resident')) {
             this.showView('resident-login');
             return;
         }
 
-        // Prevent residents from accessing other views
         if (this.userRole === 'resident' && view !== 'resident-dashboard') {
             this.showNotification('Access restricted to residents only', 'warning');
             return;
         }
 
-        // Update navigation
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.remove('active');
         });
@@ -496,7 +411,6 @@ class VisitorManagementApp {
         this.currentView = view;
         this.updateUI();
 
-        // Close sidebar after navigation
         const sidebar = document.getElementById('sidebar');
         const mainContent = document.getElementById('mainContent');
         if (sidebar && mainContent) {
@@ -508,12 +422,10 @@ class VisitorManagementApp {
     showView(viewName) {
         console.log('Showing view:', viewName);
 
-        // Hide all views
         document.querySelectorAll('.view').forEach(view => {
             view.classList.remove('active');
         });
 
-        // Show target view
         let targetView;
         if (viewName === 'guard') {
             targetView = document.getElementById('guard-view');
@@ -541,7 +453,6 @@ class VisitorManagementApp {
 
     updateLanguage() {
         if (this.userRole === 'resident') {
-            // Don't show language toggle for residents
             const languageToggle = document.getElementById('languageToggle');
             if (languageToggle) {
                 languageToggle.style.display = 'none';
@@ -559,7 +470,6 @@ class VisitorManagementApp {
             'submitBtn': this.isMarathi ? 'विनंती पाठवा' : 'Submit Request'
         };
 
-        // Update text content
         Object.keys(translations).forEach(id => {
             const element = document.getElementById(id);
             if (element) {
@@ -572,7 +482,6 @@ class VisitorManagementApp {
             }
         });
 
-        // Update language toggle button
         const languageToggle = document.getElementById('languageToggle');
         if (languageToggle) {
             languageToggle.textContent = this.isMarathi ? 'English' : 'मराठी';
@@ -584,7 +493,6 @@ class VisitorManagementApp {
         const submitBtn = residentForm.querySelector('button[type="submit"]');
         const originalText = submitBtn.textContent;
 
-        // Show loading state
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="loading"></span> Processing...';
 
@@ -606,84 +514,20 @@ class VisitorManagementApp {
                 throw new Error('Please enter a valid email address');
             }
 
-            // Get flat information
-            const flat = await this.getFlatByCode(flatCode);
-            if (!flat) {
-                throw new Error('Invalid flat selection');
-            }
+            console.log('Attempting resident registration:', { phone, email, flatCode });
 
-            console.log('Attempting resident registration:', { phone, email, flatCode, flat });
+            const response = await this.apiCall('/residents/auth', {
+                method: 'POST',
+                body: JSON.stringify({ phone, email, flatCode })
+            });
 
-            if (this.supabase && this.isOnline) {
-                // Check if resident already exists
-                const { data: existingResident, error: checkError } = await this.supabase
-                    .from('residents')
-                    .select('*')
-                    .eq('phone', phone)
-                    .maybeSingle();
-
-                if (checkError && checkError.code !== 'PGRST116') {
-                    console.error('Error checking existing resident:', checkError);
-                    throw new Error('Database connection error');
-                }
-
-                let currentUser;
-                if (existingResident) {
-                    // Update existing resident
-                    const { data: updateData, error: updateError } = await this.supabase
-                        .from('residents')
-                        .update({ 
-                            last_login: new Date().toISOString(),
-                            flat_id: flat.id,
-                            email: email
-                        })
-                        .eq('id', existingResident.id)
-                        .select()
-                        .single();
-
-                    if (updateError) {
-                        console.error('Error updating resident:', updateError);
-                        throw new Error('Failed to update resident data');
-                    }
-                    currentUser = updateData;
-                } else {
-                    // Create new resident
-                    const { data: insertData, error: insertError } = await this.supabase
-                        .from('residents')
-                        .insert([{
-                            phone,
-                            email,
-                            flat_id: flat.id,
-                            last_login: new Date().toISOString(),
-                            is_active: true,
-                            role: 'resident'
-                        }])
-                        .select()
-                        .single();
-
-                    if (insertError) {
-                        console.error('Error creating resident:', insertError);
-                        throw new Error(`Registration failed: ${insertError.message}`);
-                    }
-                    currentUser = insertData;
-                }
-
-                // Add flat information to user object for easy access
-                currentUser.flat_code = flatCode;
-                currentUser.flat_number = flatCode; // For backward compatibility
-                this.currentUser = currentUser;
-            } else {
-                throw new Error('Database connection not available');
-            }
-
-            // Store session persistently
+            this.currentUser = response.data;
             this.userRole = 'resident';
             localStorage.setItem('sai_resident_user', JSON.stringify(this.currentUser));
             localStorage.setItem('sai_user_role', 'resident');
 
             console.log('Resident login successful:', this.currentUser);
 
-            // Update UI
             this.updateNavigationForRole();
             this.showView('resident-dashboard');
             this.updateResidentInfo();
@@ -826,7 +670,6 @@ class VisitorManagementApp {
             canvas.style.display = 'none';
         }
 
-        // Reset buttons
         const captureBtn = document.getElementById('captureBtn');
         const retakeBtn = document.getElementById('retakeBtn');
         const savePhotoBtn = document.getElementById('savePhotoBtn');
@@ -860,37 +703,25 @@ class VisitorManagementApp {
                 throw new Error('Please take a visitor photo');
             }
 
-            // Get flat information
-            const flat = await this.getFlatByCode(flatCode);
-            if (!flat) {
-                throw new Error('Invalid flat selection');
-            }
-
             const requestData = {
                 visitor_name: visitorName,
                 vehicle_type: vehicleType || null,
                 vehicle_number: vehicleNumber || null,
                 purpose: purpose || 'Other',
-                flat_id: flat.id,
+                flatCode: flatCode,
                 photo_url: this.currentPhoto,
-                status: 'pending',
                 guard_id: 'guard-1'
             };
 
             console.log('Submitting request data:', requestData);
 
-            if (this.supabase && this.isOnline) {
-                const { data, error } = await this.supabase
-                    .from('visitor_requests')
-                    .insert([requestData])
-                    .select();
-
-                if (error) {
-                    console.error('Supabase error:', error);
-                    throw new Error(`Database error: ${error.message}`);
-                }
+            if (this.isOnline) {
+                const response = await this.apiCall('/visitor-requests', {
+                    method: 'POST',
+                    body: JSON.stringify(requestData)
+                });
                 
-                console.log('Request submitted successfully:', data);
+                console.log('Request submitted successfully:', response.data);
                 this.showNotification('Request sent successfully!', 'success');
             } else {
                 this.offlineQueue.push(requestData);
@@ -923,27 +754,9 @@ class VisitorManagementApp {
 
         try {
             let pendingRequests = [];
-            if (this.supabase && this.isOnline) {
-                const { data, error } = await this.supabase
-                    .from('visitor_requests_with_flat_details')
-                    .select('*')
-                    .eq('status', 'pending')
-                    .order('created_at', { ascending: false });
-
-                if (error) {
-                    console.error('Error fetching pending requests:', error);
-                    // Fallback to basic query
-                    const { data: fallbackData, error: fallbackError } = await this.supabase
-                        .from('visitor_requests')
-                        .select('*')
-                        .eq('status', 'pending')
-                        .order('created_at', { ascending: false });
-                    
-                    if (fallbackError) throw fallbackError;
-                    pendingRequests = fallbackData || [];
-                } else {
-                    pendingRequests = data || [];
-                }
+            if (this.isOnline) {
+                const response = await this.apiCall('/visitor-requests/pending');
+                pendingRequests = response.data || [];
             }
 
             if (pendingRequests.length === 0) {
@@ -1006,26 +819,9 @@ class VisitorManagementApp {
 
         try {
             let pendingApprovals = [];
-            if (this.supabase && this.isOnline) {
-                // Get flat information for current user
-                const flat = await this.getFlatByCode(this.currentUser.flat_code || this.currentUser.flat_number);
-                if (!flat) {
-                    console.error('Cannot find flat for current user');
-                    return;
-                }
-
-                const { data, error } = await this.supabase
-                    .from('visitor_requests_with_flat_details')
-                    .select('*')
-                    .eq('flat_id', flat.id)
-                    .eq('status', 'pending')
-                    .order('created_at', { ascending: false });
-
-                if (error) {
-                    console.error('Error fetching pending approvals:', error);
-                    return;
-                }
-                pendingApprovals = data || [];
+            if (this.isOnline) {
+                const response = await this.apiCall(`/visitor-requests/pending/${this.currentUser.flat_id}`);
+                pendingApprovals = response.data || [];
             }
 
             if (pendingApprovals.length === 0) {
@@ -1050,7 +846,7 @@ class VisitorManagementApp {
                             </div>
                             <div class="request-info-item">
                                 <span class="request-info-label">Vehicle:</span>
-                                <span>${request.vehicle_number || 'N/A'}</span>
+                                <span>${request.visitor_number || 'N/A'}</span>
                             </div>
                             <div class="request-info-item">
                                 <span class="request-info-label">Purpose:</span>
@@ -1082,27 +878,9 @@ class VisitorManagementApp {
 
         try {
             let history = [];
-            if (this.supabase && this.isOnline) {
-                // Get flat information for current user
-                const flat = await this.getFlatByCode(this.currentUser.flat_code || this.currentUser.flat_number);
-                if (!flat) {
-                    console.error('Cannot find flat for current user');
-                    return;
-                }
-
-                const { data, error } = await this.supabase
-                    .from('visitor_requests_with_flat_details')
-                    .select('*')
-                    .eq('flat_id', flat.id)
-                    .neq('status', 'pending')
-                    .order('created_at', { ascending: false })
-                    .limit(20);
-
-                if (error) {
-                    console.error('Error fetching visitor history:', error);
-                    return;
-                }
-                history = data || [];
+            if (this.isOnline) {
+                const response = await this.apiCall(`/visitor-requests/history/${this.currentUser.flat_id}`);
+                history = response.data || [];
             }
 
             if (history.length === 0) {
@@ -1148,17 +926,11 @@ class VisitorManagementApp {
 
     async approveRequest(requestId) {
         try {
-            if (this.supabase && this.isOnline) {
-                const { error } = await this.supabase
-                    .from('visitor_requests')
-                    .update({
-                        status: 'approved',
-                        approved_at: new Date().toISOString(),
-                        approved_by: this.currentUser?.id
-                    })
-                    .eq('id', requestId);
-
-                if (error) throw error;
+            if (this.isOnline) {
+                await this.apiCall(`/visitor-requests/${requestId}/approve`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ approved_by: this.currentUser?.id })
+                });
             }
 
             this.updatePendingApprovals();
@@ -1171,17 +943,11 @@ class VisitorManagementApp {
 
     async denyRequest(requestId) {
         try {
-            if (this.supabase && this.isOnline) {
-                const { error } = await this.supabase
-                    .from('visitor_requests')
-                    .update({
-                        status: 'denied',
-                        denied_at: new Date().toISOString(),
-                        denied_by: this.currentUser?.id
-                    })
-                    .eq('id', requestId);
-
-                if (error) throw error;
+            if (this.isOnline) {
+                await this.apiCall(`/visitor-requests/${requestId}/deny`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ denied_by: this.currentUser?.id })
+                });
             }
 
             this.updatePendingApprovals();
@@ -1194,16 +960,10 @@ class VisitorManagementApp {
 
     async allowEntry(requestId) {
         try {
-            if (this.supabase && this.isOnline) {
-                const { error } = await this.supabase
-                    .from('visitor_requests')
-                    .update({
-                        entry_time: new Date().toISOString(),
-                        status: 'completed'
-                    })
-                    .eq('id', requestId);
-
-                if (error) throw error;
+            if (this.isOnline) {
+                await this.apiCall(`/visitor-requests/${requestId}/entry`, {
+                    method: 'PUT'
+                });
             }
 
             this.updatePendingRequests();
@@ -1216,7 +976,7 @@ class VisitorManagementApp {
 
     async updateAdminStats() {
         try {
-            if (!this.supabase || !this.isOnline) {
+            if (!this.isOnline) {
                 document.getElementById('todayVisitors').textContent = '0';
                 document.getElementById('pendingApprovals').textContent = '0';
                 document.getElementById('approvedToday').textContent = '0';
@@ -1224,22 +984,13 @@ class VisitorManagementApp {
                 return;
             }
 
-            const today = new Date().toISOString().split('T')[0];
+            const response = await this.apiCall('/admin/stats');
+            const stats = response.data;
 
-            const { data: todayVisitors } = await this.supabase
-                .from('visitor_requests')
-                .select('*')
-                .gte('created_at', today);
-
-            const { data: pendingApprovals } = await this.supabase
-                .from('visitor_requests')
-                .select('*')
-                .eq('status', 'pending');
-
-            document.getElementById('todayVisitors').textContent = todayVisitors?.length || 0;
-            document.getElementById('pendingApprovals').textContent = pendingApprovals?.length || 0;
-            document.getElementById('approvedToday').textContent = todayVisitors?.filter(r => r.status === 'approved').length || 0;
-            document.getElementById('deniedToday').textContent = todayVisitors?.filter(r => r.status === 'denied').length || 0;
+            document.getElementById('todayVisitors').textContent = stats.todayVisitors || 0;
+            document.getElementById('pendingApprovals').textContent = stats.pendingApprovals || 0;
+            document.getElementById('approvedToday').textContent = stats.approvedToday || 0;
+            document.getElementById('deniedToday').textContent = stats.deniedToday || 0;
         } catch (error) {
             console.error('Error updating admin stats:', error);
         }
@@ -1250,23 +1001,12 @@ class VisitorManagementApp {
         const date = document.getElementById('dateFilter').value;
 
         try {
-            let query = this.supabase.from('visitor_requests_with_flat_details').select('*');
+            const params = new URLSearchParams();
+            if (wing) params.append('wing', wing);
+            if (date) params.append('date', date);
 
-            if (wing) {
-                query = query.eq('wing', wing);
-            }
-
-            if (date) {
-                const startDate = new Date(date).toISOString().split('T')[0];
-                const endDate = new Date(new Date(date).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                query = query.gte('created_at', startDate).lt('created_at', endDate);
-            }
-
-            const { data: records, error } = await query.order('created_at', { ascending: false }).limit(100);
-
-            if (error) throw error;
-
-            this.displayVisitorRecords(records || []);
+            const response = await this.apiCall(`/admin/visitor-records?${params.toString()}`);
+            this.displayVisitorRecords(response.data || []);
         } catch (error) {
             console.error('Error searching visitor records:', error);
             this.showNotification('Error searching records', 'error');
@@ -1278,15 +1018,9 @@ class VisitorManagementApp {
         if (!recordsContainer) return;
 
         try {
-            if (records === null && this.supabase && this.isOnline) {
-                const { data, error } = await this.supabase
-                    .from('visitor_requests_with_flat_details')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                    .limit(50);
-
-                if (error) throw error;
-                records = data || [];
+            if (records === null && this.isOnline) {
+                const response = await this.apiCall('/admin/visitor-records');
+                records = response.data || [];
             } else if (records === null) {
                 records = [];
             }
@@ -1337,19 +1071,17 @@ class VisitorManagementApp {
     }
 
     async processOfflineQueue() {
-        if (!this.isOnline || !this.supabase || this.offlineQueue.length === 0) return;
+        if (!this.isOnline || this.offlineQueue.length === 0) return;
 
         console.log('Processing offline queue:', this.offlineQueue.length, 'items');
         
         for (const item of this.offlineQueue) {
             try {
-                const { data, error } = await this.supabase
-                    .from('visitor_requests')
-                    .insert([item])
-                    .select();
-
-                if (error) throw error;
-                console.log('Offline item processed:', data);
+                await this.apiCall('/visitor-requests', {
+                    method: 'POST',
+                    body: JSON.stringify(item)
+                });
+                console.log('Offline item processed:', item);
             } catch (error) {
                 console.error('Error processing offline item:', error);
             }
@@ -1372,7 +1104,6 @@ class VisitorManagementApp {
             this.displayVisitorRecords();
         }
 
-        // Update language settings
         this.updateLanguage();
     }
 
@@ -1381,7 +1112,6 @@ class VisitorManagementApp {
         notification.className = `notification ${type}`;
         notification.textContent = message;
         
-        // Add some basic styling
         notification.style.cssText = `
             position: fixed;
             top: 20px;
