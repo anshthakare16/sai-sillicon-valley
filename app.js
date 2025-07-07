@@ -10,6 +10,7 @@ class VisitorManagementApp {
         this.realTimeSubscriptions = [];
         this.isOnline = navigator.onLine;
         this.offlineQueue = [];
+        this.flatsList = []; // Cache for flats data
         
         // Initialize Supabase
         this.initSupabase();
@@ -38,7 +39,10 @@ class VisitorManagementApp {
     }
 
     async init() {
-        // Check for existing resident session first
+        // Load flats data first
+        await this.loadFlatsData();
+        
+        // Check for existing resident session
         await this.checkExistingSession();
         
         this.setupEventListeners();
@@ -61,6 +65,64 @@ class VisitorManagementApp {
         this.registerServiceWorker();
     }
 
+    async loadFlatsData() {
+        try {
+            if (this.supabase && this.isOnline) {
+                const { data, error } = await this.supabase
+                    .from('flats')
+                    .select('*')
+                    .order('wing', { ascending: true })
+                    .order('flat_number', { ascending: true });
+
+                if (error) throw error;
+                this.flatsList = data || [];
+                console.log('Flats data loaded:', this.flatsList.length, 'flats');
+            }
+        } catch (error) {
+            console.error('Error loading flats data:', error);
+            // Fallback: generate flats list
+            this.generateFallbackFlats();
+        }
+    }
+
+    generateFallbackFlats() {
+        this.flatsList = [];
+        const wings = ['A', 'B', 'C', 'D', 'E'];
+        wings.forEach(wing => {
+            for (let floor = 1; floor <= 5; floor++) {
+                for (let unit = 1; unit <= 5; unit++) {
+                    const flatNumber = floor * 100 + unit;
+                    this.flatsList.push({
+                        id: `${wing}${flatNumber}`,
+                        wing: wing,
+                        flat_number: flatNumber,
+                        flat_code: `${wing}${flatNumber}`
+                    });
+                }
+            }
+        });
+    }
+
+    async getFlatByCode(flatCode) {
+        if (this.supabase && this.isOnline) {
+            try {
+                const { data, error } = await this.supabase
+                    .from('flats')
+                    .select('*')
+                    .eq('flat_code', flatCode)
+                    .single();
+
+                if (error) throw error;
+                return data;
+            } catch (error) {
+                console.error('Error getting flat by code:', error);
+            }
+        }
+        
+        // Fallback to local cache
+        return this.flatsList.find(flat => flat.flat_code === flatCode);
+    }
+
     async checkExistingSession() {
         // Check for stored resident session
         const storedUser = localStorage.getItem('sai_resident_user');
@@ -71,6 +133,23 @@ class VisitorManagementApp {
                 this.currentUser = JSON.parse(storedUser);
                 this.userRole = 'resident';
                 console.log('Restored resident session:', this.currentUser);
+
+                // Verify session is still valid
+                if (this.supabase && this.isOnline) {
+                    const { data, error } = await this.supabase
+                        .from('residents')
+                        .select('*')
+                        .eq('id', this.currentUser.id)
+                        .single();
+
+                    if (error || !data) {
+                        console.log('Session expired, clearing storage');
+                        this.clearStoredSession();
+                    } else {
+                        this.currentUser = data;
+                        localStorage.setItem('sai_resident_user', JSON.stringify(this.currentUser));
+                    }
+                }
             } catch (error) {
                 console.error('Error parsing stored user data:', error);
                 this.clearStoredSession();
@@ -99,7 +178,9 @@ class VisitorManagementApp {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 const view = link.dataset.view;
-                this.switchView(view);
+                if (view) {
+                    this.switchView(view);
+                }
             });
         });
 
@@ -199,7 +280,7 @@ class VisitorManagementApp {
         sidebarMenu.innerHTML = menuHTML;
         
         // Re-attach event listeners
-        this.setupEventListeners();
+        setTimeout(() => this.setupEventListeners(), 100);
     }
 
     setupTabs() {
@@ -260,12 +341,41 @@ class VisitorManagementApp {
     }
 
     populateDropdowns() {
-        const residentFlat = document.getElementById('residentFlat');
         const guardFlatSelect = document.getElementById('flatSelect');
+        const residentFlat = document.getElementById('residentFlat');
         
-        if (residentFlat && guardFlatSelect) {
-            residentFlat.innerHTML = guardFlatSelect.innerHTML;
+        if (guardFlatSelect) {
+            this.populateFlatDropdown(guardFlatSelect);
         }
+        
+        if (residentFlat) {
+            this.populateFlatDropdown(residentFlat);
+        }
+    }
+
+    populateFlatDropdown(selectElement) {
+        if (!selectElement || this.flatsList.length === 0) return;
+
+        // Group flats by wing
+        const wingGroups = {};
+        this.flatsList.forEach(flat => {
+            if (!wingGroups[flat.wing]) {
+                wingGroups[flat.wing] = [];
+            }
+            wingGroups[flat.wing].push(flat);
+        });
+
+        let optionsHTML = '<option value="">Select Flat</option>';
+        
+        Object.keys(wingGroups).sort().forEach(wing => {
+            optionsHTML += `<optgroup label="${wing} Wing">`;
+            wingGroups[wing].forEach(flat => {
+                optionsHTML += `<option value="${flat.flat_code}">${flat.flat_code}</option>`;
+            });
+            optionsHTML += '</optgroup>';
+        });
+
+        selectElement.innerHTML = optionsHTML;
     }
 
     showConnectionStatus(status) {
@@ -279,15 +389,11 @@ class VisitorManagementApp {
         statusEl.className = `connection-status ${status}`;
         statusEl.textContent = status === 'connected' ? 'Online' : 'Offline';
 
-        if (status === 'disconnected') {
-            setTimeout(() => {
-                if (statusEl) statusEl.remove();
-            }, 5000);
-        } else {
-            setTimeout(() => {
-                if (statusEl) statusEl.remove();
-            }, 2000);
-        }
+        setTimeout(() => {
+            if (statusEl && statusEl.parentNode) {
+                statusEl.remove();
+            }
+        }, status === 'disconnected' ? 5000 : 2000);
     }
 
     async setupRealTimeSubscriptions() {
@@ -328,16 +434,28 @@ class VisitorManagementApp {
         }
 
         // Show notifications
-        if (eventType === 'INSERT' && newRecord) {
-            if (this.currentUser && this.userRole === 'resident' && newRecord.flat_number === this.currentUser.flat_number) {
-                this.showNotification('New visitor approval request', 'info');
-            }
+        if (eventType === 'INSERT' && newRecord && this.currentUser && this.userRole === 'resident') {
+            // Check if this request is for current user's flat
+            this.checkIfRequestForCurrentUser(newRecord);
         } else if (eventType === 'UPDATE' && newRecord) {
             if (newRecord.status === 'approved') {
                 this.showNotification('Visitor request approved', 'success');
             } else if (newRecord.status === 'denied') {
                 this.showNotification('Visitor request denied', 'error');
             }
+        }
+    }
+
+    async checkIfRequestForCurrentUser(record) {
+        if (!this.currentUser || !record.flat_id) return;
+
+        try {
+            const flat = await this.getFlatByCode(this.currentUser.flat_number || this.currentUser.flat_code);
+            if (flat && flat.id === record.flat_id) {
+                this.showNotification('New visitor approval request', 'info');
+            }
+        } catch (error) {
+            console.error('Error checking flat match:', error);
         }
     }
 
@@ -448,7 +566,7 @@ class VisitorManagementApp {
                 const submitText = element.querySelector('#submitText');
                 if (submitText) {
                     submitText.textContent = translations[id];
-                } else {
+                } else if (!element.tagName || element.tagName !== 'SELECT') {
                     element.textContent = translations[id];
                 }
             }
@@ -473,9 +591,9 @@ class VisitorManagementApp {
         try {
             const phone = document.getElementById('residentPhone').value.trim();
             const email = document.getElementById('residentEmail').value.trim();
-            const flatNumber = document.getElementById('residentFlat').value;
+            const flatCode = document.getElementById('residentFlat').value;
 
-            if (!phone || !email || !flatNumber) {
+            if (!phone || !email || !flatCode) {
                 throw new Error('Please fill all fields');
             }
 
@@ -488,48 +606,74 @@ class VisitorManagementApp {
                 throw new Error('Please enter a valid email address');
             }
 
+            // Get flat information
+            const flat = await this.getFlatByCode(flatCode);
+            if (!flat) {
+                throw new Error('Invalid flat selection');
+            }
+
+            console.log('Attempting resident registration:', { phone, email, flatCode, flat });
+
             if (this.supabase && this.isOnline) {
                 // Check if resident already exists
-                const { data: existingResident } = await this.supabase
+                const { data: existingResident, error: checkError } = await this.supabase
                     .from('residents')
                     .select('*')
                     .eq('phone', phone)
-                    .single();
+                    .maybeSingle();
 
+                if (checkError && checkError.code !== 'PGRST116') {
+                    console.error('Error checking existing resident:', checkError);
+                    throw new Error('Database connection error');
+                }
+
+                let currentUser;
                 if (existingResident) {
-                    this.currentUser = existingResident;
+                    // Update existing resident
+                    const { data: updateData, error: updateError } = await this.supabase
+                        .from('residents')
+                        .update({ 
+                            last_login: new Date().toISOString(),
+                            flat_id: flat.id,
+                            email: email
+                        })
+                        .eq('id', existingResident.id)
+                        .select()
+                        .single();
+
+                    if (updateError) {
+                        console.error('Error updating resident:', updateError);
+                        throw new Error('Failed to update resident data');
+                    }
+                    currentUser = updateData;
                 } else {
                     // Create new resident
-                    const { data, error } = await this.supabase
+                    const { data: insertData, error: insertError } = await this.supabase
                         .from('residents')
                         .insert([{
                             phone,
                             email,
-                            flat_number: flatNumber,
+                            flat_id: flat.id,
                             last_login: new Date().toISOString(),
-                            created_at: new Date().toISOString()
+                            is_active: true,
+                            role: 'resident'
                         }])
                         .select()
                         .single();
 
-                    if (error) throw error;
-                    this.currentUser = data;
+                    if (insertError) {
+                        console.error('Error creating resident:', insertError);
+                        throw new Error(`Registration failed: ${insertError.message}`);
+                    }
+                    currentUser = insertData;
                 }
 
-                // Update last login
-                await this.supabase
-                    .from('residents')
-                    .update({ last_login: new Date().toISOString() })
-                    .eq('id', this.currentUser.id);
+                // Add flat information to user object for easy access
+                currentUser.flat_code = flatCode;
+                currentUser.flat_number = flatCode; // For backward compatibility
+                this.currentUser = currentUser;
             } else {
-                // Offline mode
-                this.currentUser = {
-                    id: Date.now(),
-                    phone,
-                    email,
-                    flat_number: flatNumber,
-                    created_at: new Date().toISOString()
-                };
+                throw new Error('Database connection not available');
             }
 
             // Store session persistently
@@ -537,7 +681,9 @@ class VisitorManagementApp {
             localStorage.setItem('sai_resident_user', JSON.stringify(this.currentUser));
             localStorage.setItem('sai_user_role', 'resident');
 
-            // Update navigation and show resident dashboard
+            console.log('Resident login successful:', this.currentUser);
+
+            // Update UI
             this.updateNavigationForRole();
             this.showView('resident-dashboard');
             this.updateResidentInfo();
@@ -547,7 +693,6 @@ class VisitorManagementApp {
             console.error('Error registering resident:', error);
             this.showNotification(error.message, 'error');
         } finally {
-            // Reset loading state
             submitBtn.disabled = false;
             submitBtn.innerHTML = originalText;
         }
@@ -556,7 +701,7 @@ class VisitorManagementApp {
     updateResidentInfo() {
         const residentInfo = document.getElementById('residentInfo');
         if (residentInfo && this.currentUser) {
-            residentInfo.textContent = `${this.currentUser.flat_number} | ${this.currentUser.phone}`;
+            residentInfo.textContent = `${this.currentUser.flat_code || this.currentUser.flat_number} | ${this.currentUser.phone}`;
         }
     }
 
@@ -701,13 +846,13 @@ class VisitorManagementApp {
         if (submitText) submitText.textContent = 'Submitting...';
 
         try {
-            const visitorName = document.getElementById('visitorName').value;
+            const visitorName = document.getElementById('visitorName').value.trim();
             const vehicleType = document.getElementById('vehicleType').value;
-            const vehicleNumber = document.getElementById('vehicleNumber').value;
-            const purpose = document.getElementById('purposeOfVisit').value;
-            const flatNumber = document.getElementById('flatSelect').value;
+            const vehicleNumber = document.getElementById('vehicleNumber').value.trim();
+            const purpose = document.getElementById('purposeOfVisit').value.trim();
+            const flatCode = document.getElementById('flatSelect').value;
 
-            if (!visitorName || !flatNumber) {
+            if (!visitorName || !flatCode) {
                 throw new Error('Please fill all required fields');
             }
 
@@ -715,40 +860,51 @@ class VisitorManagementApp {
                 throw new Error('Please take a visitor photo');
             }
 
+            // Get flat information
+            const flat = await this.getFlatByCode(flatCode);
+            if (!flat) {
+                throw new Error('Invalid flat selection');
+            }
+
             const requestData = {
                 visitor_name: visitorName,
                 vehicle_type: vehicleType || null,
                 vehicle_number: vehicleNumber || null,
                 purpose: purpose || 'Other',
-                flat_number: flatNumber,
+                flat_id: flat.id,
                 photo_url: this.currentPhoto,
                 status: 'pending',
-                created_at: new Date().toISOString(),
                 guard_id: 'guard-1'
             };
 
-            if (this.isOnline && this.supabase) {
+            console.log('Submitting request data:', requestData);
+
+            if (this.supabase && this.isOnline) {
                 const { data, error } = await this.supabase
                     .from('visitor_requests')
                     .insert([requestData])
                     .select();
 
-                if (error) throw error;
-                console.log('Visitor request submitted:', data);
+                if (error) {
+                    console.error('Supabase error:', error);
+                    throw new Error(`Database error: ${error.message}`);
+                }
+                
+                console.log('Request submitted successfully:', data);
+                this.showNotification('Request sent successfully!', 'success');
             } else {
                 this.offlineQueue.push(requestData);
                 localStorage.setItem('visitorAppOfflineQueue', JSON.stringify(this.offlineQueue));
+                this.showNotification('Request queued (offline mode)', 'warning');
             }
 
-            // Clear form
+            // Clear form only after successful submission
             document.getElementById('visitorForm').reset();
             const preview = document.getElementById('photoPreview');
             if (preview) {
                 preview.innerHTML = '<span id="photo-placeholder">No photo taken</span>';
             }
             this.currentPhoto = null;
-
-            this.showNotification('Request sent successfully!', 'success');
             this.updateUI();
             
         } catch (error) {
@@ -769,13 +925,25 @@ class VisitorManagementApp {
             let pendingRequests = [];
             if (this.supabase && this.isOnline) {
                 const { data, error } = await this.supabase
-                    .from('visitor_requests')
+                    .from('visitor_requests_with_flat_details')
                     .select('*')
                     .eq('status', 'pending')
                     .order('created_at', { ascending: false });
 
-                if (error) throw error;
-                pendingRequests = data || [];
+                if (error) {
+                    console.error('Error fetching pending requests:', error);
+                    // Fallback to basic query
+                    const { data: fallbackData, error: fallbackError } = await this.supabase
+                        .from('visitor_requests')
+                        .select('*')
+                        .eq('status', 'pending')
+                        .order('created_at', { ascending: false });
+                    
+                    if (fallbackError) throw fallbackError;
+                    pendingRequests = fallbackData || [];
+                } else {
+                    pendingRequests = data || [];
+                }
             }
 
             if (pendingRequests.length === 0) {
@@ -800,7 +968,7 @@ class VisitorManagementApp {
                             </div>
                             <div class="request-info-item">
                                 <span class="request-info-label">Flat:</span>
-                                <span>${request.flat_number}</span>
+                                <span>${request.flat_code || 'N/A'}</span>
                             </div>
                             <div class="request-info-item">
                                 <span class="request-info-label">Vehicle:</span>
@@ -839,14 +1007,24 @@ class VisitorManagementApp {
         try {
             let pendingApprovals = [];
             if (this.supabase && this.isOnline) {
+                // Get flat information for current user
+                const flat = await this.getFlatByCode(this.currentUser.flat_code || this.currentUser.flat_number);
+                if (!flat) {
+                    console.error('Cannot find flat for current user');
+                    return;
+                }
+
                 const { data, error } = await this.supabase
-                    .from('visitor_requests')
+                    .from('visitor_requests_with_flat_details')
                     .select('*')
-                    .eq('flat_number', this.currentUser.flat_number)
+                    .eq('flat_id', flat.id)
                     .eq('status', 'pending')
                     .order('created_at', { ascending: false });
 
-                if (error) throw error;
+                if (error) {
+                    console.error('Error fetching pending approvals:', error);
+                    return;
+                }
                 pendingApprovals = data || [];
             }
 
@@ -905,15 +1083,25 @@ class VisitorManagementApp {
         try {
             let history = [];
             if (this.supabase && this.isOnline) {
+                // Get flat information for current user
+                const flat = await this.getFlatByCode(this.currentUser.flat_code || this.currentUser.flat_number);
+                if (!flat) {
+                    console.error('Cannot find flat for current user');
+                    return;
+                }
+
                 const { data, error } = await this.supabase
-                    .from('visitor_requests')
+                    .from('visitor_requests_with_flat_details')
                     .select('*')
-                    .eq('flat_number', this.currentUser.flat_number)
+                    .eq('flat_id', flat.id)
                     .neq('status', 'pending')
                     .order('created_at', { ascending: false })
                     .limit(20);
 
-                if (error) throw error;
+                if (error) {
+                    console.error('Error fetching visitor history:', error);
+                    return;
+                }
                 history = data || [];
             }
 
@@ -1010,8 +1198,8 @@ class VisitorManagementApp {
                 const { error } = await this.supabase
                     .from('visitor_requests')
                     .update({
-                        entry_allowed: true,
-                        entry_time: new Date().toISOString()
+                        entry_time: new Date().toISOString(),
+                        status: 'completed'
                     })
                     .eq('id', requestId);
 
@@ -1062,10 +1250,10 @@ class VisitorManagementApp {
         const date = document.getElementById('dateFilter').value;
 
         try {
-            let query = this.supabase.from('visitor_requests').select('*');
+            let query = this.supabase.from('visitor_requests_with_flat_details').select('*');
 
             if (wing) {
-                query = query.like('flat_number', `${wing}%`);
+                query = query.eq('wing', wing);
             }
 
             if (date) {
@@ -1092,7 +1280,7 @@ class VisitorManagementApp {
         try {
             if (records === null && this.supabase && this.isOnline) {
                 const { data, error } = await this.supabase
-                    .from('visitor_requests')
+                    .from('visitor_requests_with_flat_details')
                     .select('*')
                     .order('created_at', { ascending: false })
                     .limit(50);
@@ -1125,7 +1313,7 @@ class VisitorManagementApp {
                             </div>
                             <div class="request-info-item">
                                 <span class="request-info-label">Flat:</span>
-                                <span>${record.flat_number}</span>
+                                <span>${record.flat_code || 'N/A'}</span>
                             </div>
                             <div class="request-info-item">
                                 <span class="request-info-label">Vehicle:</span>
@@ -1192,6 +1380,22 @@ class VisitorManagementApp {
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
+        
+        // Add some basic styling
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 4px;
+            color: white;
+            font-weight: 500;
+            z-index: 10000;
+            max-width: 300px;
+            word-wrap: break-word;
+            background-color: ${type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : type === 'warning' ? '#ff9800' : '#2196F3'};
+        `;
+        
         document.body.appendChild(notification);
 
         setTimeout(() => {
